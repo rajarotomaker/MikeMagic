@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Models & checkpoints
+checkpoints/
+sam2/
+sammie/
+matanyone/
+minimax_remover/
+
+# Embedded python
+python-3.12.8-embed-amd64/
+
+# Inputs / outputs
+input/
+temp/
+bg_webp/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

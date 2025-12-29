@@ -11,7 +11,8 @@ checkpoints/transformer/diffusion_pytorch_model.safetensors
 checkpoints/vae/diffusion_pytorch_model.safetensors
 checkpoints/efficienttam_s_512x512.pt
 
-#custom files
+#custom files and folders
+input
 sammie/nuke_integration.py
 
 # Byte-compiled / optimized / DLL files

@@ -23,6 +23,7 @@ from sammie.export_image_dialog import ImageExportDialog
 from sammie.export_dialog import ExportDialog
 from sammie.settings_dialog import SettingsDialog
 from sammie.settings_manager import get_settings_manager, initialize_settings, ApplicationSettings
+from sammie import nuke_integration
 
 # Import GUI widgets
 from sammie.gui_widgets import (
@@ -981,7 +982,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings_mgr = initialize_settings()
         self.setWindowTitle(f"MM-roto {__version__}")
-        self.setWindowIcon(QIcon(":/icon.ico"))
+        # self.setWindowIcon(QIcon(":/icon.ico")) #removed taskbar icon
         self.is_playing = False
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(self.play_next_frame)

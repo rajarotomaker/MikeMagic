@@ -1,3 +1,4 @@
+# nuke 
 # Sammie-Roto specific files and folders
 python-3.12.8-embed-amd64/
 temp/
@@ -9,6 +10,10 @@ checkpoints/sam2.1_hiera_base_plus.pt
 checkpoints/sam2.1_hiera_large.pt
 checkpoints/transformer/diffusion_pytorch_model.safetensors
 checkpoints/vae/diffusion_pytorch_model.safetensors
+checkpoints/efficienttam_s_512x512.pt
+
+#custom files
+sammie/nuke_integration.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

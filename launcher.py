@@ -36,7 +36,7 @@ def show_error_dialog(app, error_message, detailed_error=""):
     """Show an error dialog with the crash information"""
     msg_box = QMessageBox()
     msg_box.setIcon(QMessageBox.Critical)
-    msg_box.setWindowTitle("Sammie-Roto Startup Error")
+    msg_box.setWindowTitle("MM-Roto Startup Error")
     msg_box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     msg_box.setText("MM-Roto encountered an error during startup and cannot continue.")
     msg_box.setInformativeText(error_message)
@@ -60,10 +60,10 @@ def show_error_dialog(app, error_message, detailed_error=""):
         perm_msg_box.setIcon(QMessageBox.Critical)
         perm_msg_box.setWindowTitle("Permission Error")
         perm_msg_box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        perm_msg_box.setText("Sammie-Roto does not have write permission in its installation directory.")
+        perm_msg_box.setText("MM-Roto does not have write permission in its installation directory.")
         perm_msg_box.setInformativeText(
             f"Current location:\n{app_dir}\n\n"
-            f"Please move Sammie-Roto to a location where you have write access.\n\n"
+            f"Please move MM-Roto to a location where you have write access.\n\n"
             f"Avoid running from Program Files or system directories."
         )
         perm_msg_box.setWindowFlags(perm_msg_box.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -76,7 +76,7 @@ def show_error_dialog(app, error_message, detailed_error=""):
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="Sammie-Roto: Video Segmentation and Matting Tool",
+        description="MM-Roto: Video Segmentation and Matting Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
     Examples:
@@ -127,7 +127,7 @@ if __name__ == "__main__":
         pass
 
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon(":/icon.ico"))
+    # app.setWindowIcon(QIcon(":/icon.ico")) #removed taskbar icon
     
     # Check for single instance
     lock_file, is_first = check_single_instance()

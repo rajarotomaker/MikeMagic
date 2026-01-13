@@ -283,7 +283,7 @@ class SequenceExportWorker(BaseExportWorker):
             
             self.status_updated.emit(f"Exporting frame {frame_num + 1}/{self.end_frame + 1}...")
             
-            frame_filename = f"{self.base_filename}.{frame_num:04d}.exr"
+            frame_filename = f"{self.base_filename}.{sammie.VideoInfo.first_frame + frame_num:04d}.exr"
             frame_path = os.path.join(output_dir, frame_filename)
             
             try:
@@ -376,7 +376,7 @@ class SequenceExportWorker(BaseExportWorker):
             
             self.status_updated.emit(f"Exporting frame {frame_num + 1}/{self.end_frame + 1}...")
             
-            frame_filename = f"{self.base_filename}.{frame_num:04d}.png"
+            frame_filename = f"{self.base_filename}.{sammie.VideoInfo.first_frame + frame_num:04d}.png"
             frame_path = os.path.join(output_dir, frame_filename)
             
             try:

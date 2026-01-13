@@ -46,6 +46,7 @@ class VideoInfo:
     height = 0
     fps = 0
     total_frames = 0
+    first_frame =1 # starting frame number (default 1 for videos)
 
 class DeviceManager:
     _device = None
@@ -2188,6 +2189,7 @@ def load_video(video_file, parent_window):
     VideoInfo.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     VideoInfo.fps = cap.get(cv2.CAP_PROP_FPS)
     VideoInfo.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    VideoInfo.first_frame = 1
     total_frames = VideoInfo.total_frames
 
     frame_count = 0
@@ -2293,6 +2295,7 @@ def load_video_old(video_file, parent_window):
     VideoInfo.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     VideoInfo.fps = cap.get(cv2.CAP_PROP_FPS)
     VideoInfo.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    VideoInfo.first_frame = 1
     total_frames = VideoInfo.total_frames
 
     frame_count = 0
@@ -2386,16 +2389,21 @@ def detect_image_sequence(image_path):
             
             # Consider it a sequence if we have more than 1 file
             if len(sequence_files) > 1:
-                return True, sequence_files
+                #Extract first frame number from first file
+                first_file_base = os.path.splitext(os.path.basename(sequence_files[0]))[0]
+                first_match = re.match(pattern, first_file_base)
+                first_frame_num = int(first_match.group(2)) if first_match else 1
+        
+                return True, sequence_files, first_frame_num
     
-    return False, []
+    return False, [], 0
 
 def load_image_sequence(image_path, parent_window):
     """
     Load an image or image sequence. Detects sequences automatically and prompts user.
     """
     # Check if it's part of a sequence
-    is_sequence, sequence_files = detect_image_sequence(image_path)   
+    is_sequence, sequence_files, first_frame_num = detect_image_sequence(image_path)   
     files_to_load = [image_path]  # Default to single image
     
     if is_sequence:
@@ -2448,6 +2456,7 @@ def load_image_sequence(image_path, parent_window):
     VideoInfo.height, VideoInfo.width = first_image.shape[:2]
     VideoInfo.fps = 24.0  # Default FPS for image sequences
     VideoInfo.total_frames = len(files_to_load)
+    VideoInfo.first_frame = first_frame_num
     
     # Process each image
     for frame_count, source_path in enumerate(files_to_load):

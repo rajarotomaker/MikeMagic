@@ -27,9 +27,8 @@ def send_to_nuke(file_path, frame_range, colorspace='linear'):
         sock.close()
         return True
     except Exception as e:
-        print(f"❌ send_to_nuke failed: {e}")
+        print(f"Send_to_nuke failed: {e}")
         return False
-
 
 def patch_export_dialog():
     """Add 'Send to Nuke' checkbox to export dialog"""
@@ -54,7 +53,7 @@ def patch_export_dialog():
                 layout.insertRow(row_count - 1, "", self.send_to_nuke_checkbox)
                 break
         
-        print("✅ Nuke checkbox added to Export Dialog")
+        print("Nuke checkbox added to Export Dialog")
     
     def new_start_export(self):
         """Capture export info before starting export"""
@@ -87,7 +86,7 @@ def patch_export_dialog():
                     # For video exports - use first output path
                     output_path = self.export_worker.output_paths[0]
                 else:
-                    print(f"⚠️ Unknown worker type: {type(self.export_worker)}")
+                    print(f"Unknown worker type: {type(self.export_worker)}")
                     return
 
                 output_path = output_path.replace('\\', '/')
@@ -96,45 +95,45 @@ def patch_export_dialog():
                     'path': output_path,
                     'frame_range': [first_frame, last_frame]
                 }
-                print(f"📦 Captured export info: {output_path}, frames {first_frame}-{last_frame}")
+                print(f"Captured export info: {output_path}, frames {first_frame}-{last_frame}")
             except Exception as e:
-                print(f"⚠️ Could not capture export info: {e}")
+                print(f"Could not capture export info: {e}")
                 import traceback
                 traceback.print_exc()
     
     def new_export_finished(self, success, message):
-        print(f"🔍 _export_finished called: success={success}")
+        print(f"_export_finished called: success={success}")
         
         # Call original first
         original_export_finished(self, success, message)
         
         if success and hasattr(self, 'send_to_nuke_checkbox') and self.send_to_nuke_checkbox.isChecked():
-            print("🚀 Attempting to send to Nuke...")
+            print("Attempting to send to Nuke...")
             
             if hasattr(self, '_nuke_export_info') and self._nuke_export_info:
                 output_path = self._nuke_export_info['path']
                 frame_range = self._nuke_export_info['frame_range']
                 
-                print(f"🔍 Sending: {output_path}")
-                print(f"🔍 Frames: {frame_range[0]}-{frame_range[1]}")
+                print(f"Sending: {output_path}")
+                print(f"Frames: {frame_range[0]}-{frame_range[1]}")
                 
                 if send_to_nuke(output_path, frame_range):
-                    print("✅ Successfully sent to Nuke")
+                    print("Successfully sent to Nuke")
                     QMessageBox.information(self, "Sent to Nuke", 
                         f"Exported to Nuke!\n Nuke will freeze untill RotoScoping \nFile: {output_path}\nFrames: {frame_range[0]}-{frame_range[1]}")
                 else:
-                    print("❌ Failed to send to Nuke")
+                    print("Failed to send to Nuke")
                     QMessageBox.warning(self, "Nuke Not Running", 
                         "Could not connect to Nuke.\n\nMake sure Nuke is running with the listener script active.")
             else:
-                print("⚠️ No export info found")
+                print("No export info found")
         else:
             print("⏭️ Skipping Nuke send")
     
     ExportDialog.__init__ = new_init
     ExportDialog._start_export = new_start_export
     ExportDialog._export_finished = new_export_finished
-    print("✅ Nuke integration patch applied")
+    print("Nuke integration patch applied")
 
 
 # Auto-apply patch

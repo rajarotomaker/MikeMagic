@@ -981,7 +981,7 @@ class MainWindow(QMainWindow):
     def __init__(self, initial_file=None):
         super().__init__()
         self.settings_mgr = initialize_settings()
-        self.setWindowTitle(f"MM-roto {__version__}")
+        self.setWindowTitle(f"Mike Magic {__version__}")
         # self.setWindowIcon(QIcon(":/icon.ico")) #removed taskbar icon
         self.is_playing = False
         self.play_timer = QTimer(self)

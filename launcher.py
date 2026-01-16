@@ -9,9 +9,9 @@ from sammie import resources
 
 def show_splash(app):
 
-    splash_pix = QPixmap(":/bg.webp")
+    splash_pix = QPixmap("splash.png")
     splash = QSplashScreen(splash_pix, Qt.SplashScreen)
-    splash.showMessage("Loading MM-Roto...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+    splash.showMessage("Loading Mike Magic...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
 
     splash.show()
     app.processEvents()

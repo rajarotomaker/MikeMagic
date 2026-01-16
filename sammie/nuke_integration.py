@@ -128,7 +128,7 @@ def patch_export_dialog():
             else:
                 print("No export info found")
         else:
-            print("⏭️ Skipping Nuke send")
+            print("Skipping Nuke send")
     
     ExportDialog.__init__ = new_init
     ExportDialog._start_export = new_start_export

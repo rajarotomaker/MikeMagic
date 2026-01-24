@@ -11,7 +11,7 @@ def show_splash(app):
 
     splash_pix = QPixmap("splash.png")
     splash = QSplashScreen(splash_pix, Qt.SplashScreen)
-    splash.showMessage("Loading Mike Magic...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+    splash.showMessage("Loading MikeMagic...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
 
     splash.show()
     app.processEvents()

@@ -355,10 +355,10 @@ class MattingTab(QWidget):
     def _init_ui(self):
         """Initialize the matting tab layout"""
         layout = QVBoxLayout(self)
-        
+
         # Instructions
-        self._create_instructions_section(layout)
-        
+        # self._create_instructions_section(layout)
+
         # Run/Clear button
         matting_group = QGroupBox("Matting")
         matting_layout = QVBoxLayout(matting_group)
@@ -569,10 +569,10 @@ class ObjectRemovalTab(QWidget):
     def _init_ui(self):
         """Initialize the object removal tab layout"""
         layout = QVBoxLayout(self)
-        
+
         # Instructions
-        self._create_instructions_section(layout)
-        
+        # self._create_instructions_section(layout)
+
         # Run/Clear button
         removal_group = QGroupBox("Object Removal")
         removal_layout = QVBoxLayout(removal_group)
@@ -960,9 +960,9 @@ class Sidebar(QWidget):
         self.matting_tab = MattingTab()
         self.removal_tab = ObjectRemovalTab()
         
-        self.tab_widget.addTab(self.segmentation_tab, "Segmentation")
-        self.tab_widget.addTab(self.matting_tab, "Matting")
-        self.tab_widget.addTab(self.removal_tab, "Object Removal")
+        self.tab_widget.addTab(self.segmentation_tab, "Selection")
+        self.tab_widget.addTab(self.matting_tab, "Matte")
+        self.tab_widget.addTab(self.removal_tab, "Paint")
         
         layout.addWidget(self.tab_widget)
 
@@ -981,7 +981,7 @@ class MainWindow(QMainWindow):
     def __init__(self, initial_file=None):
         super().__init__()
         self.settings_mgr = initialize_settings()
-        self.setWindowTitle(f"Mike Magic {__version__}")
+        self.setWindowTitle(f"MikeMagic {__version__}")
         # self.setWindowIcon(QIcon(":/icon.ico")) #removed taskbar icon
         self.is_playing = False
         self.play_timer = QTimer(self)

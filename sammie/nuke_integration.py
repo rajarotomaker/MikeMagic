@@ -82,6 +82,12 @@ def patch_export_dialog():
                     else:
                         output_path = os.path.join(output_dir, base_filename)
 
+                    # Adjust frame range to match actual file numbering
+                    # Files are named with (first_frame + frame_num), so we need to offset
+                    from sammie import sammie
+                    first_frame = first_frame + sammie.VideoInfo.first_frame
+                    last_frame = last_frame + sammie.VideoInfo.first_frame
+
                 elif isinstance(self.export_worker, VideoExportWorker):
                     # For video exports - use first output path
                     output_path = self.export_worker.output_paths[0]

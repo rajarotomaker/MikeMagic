@@ -17,8 +17,7 @@ if MIKEMAGIC_ROOT not in sys.path:
 nuke.pluginAddPath(f"{MIKEMAGIC_ROOT}/mike_magic")
 
 # External tools (pyd_playground)
-nuke.pluginAddPath("D:/pyd_playground/cotracker_roto/MMTracker_for_nuke/gizmos")
-nuke.pluginAddPath("D:/pyd_playground/cotracker_roto/MMTracker_for_nuke/furytools")
+# nuke.pluginAddPath("D:/pyd_playground/cotracker_roto/MMTracker_for_nuke/gizmos")
 
 # Initialize mm_roto_toolkit
 if nuke.GUI:

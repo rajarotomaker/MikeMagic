@@ -214,7 +214,7 @@ class SegmentationTab(QWidget):
             "Remove small isolated regions outside main objects."),
             ("Border Fix:", 0, 10, 0, settings_mgr.get_session_setting("border_fix", 0), "border_fix",
             "Fix artifacts at the edge of the frame by extending masks towards the edge."),
-            ("Shrink/Grow:", -10, 10, 0, settings_mgr.get_session_setting("grow", 0), "grow",
+            ("Shrink/Grow:", -100, 100, 0, settings_mgr.get_session_setting("grow", 0), "grow",
             "Shrink (erode) or grow (dilate) the segmented regions.")
         ]
         
@@ -689,7 +689,7 @@ class ObjectRemovalTab(QWidget):
         shrink_grow_layout.addWidget(label, 0, 0)
         
         self.shrink_grow_slider = QSlider(Qt.Horizontal)
-        self.shrink_grow_slider.setRange(-20, 20)
+        self.shrink_grow_slider.setRange(-100, 100)
         self.shrink_grow_slider.setValue(current_grow)
         self.shrink_grow_slider.setToolTip("Shrink (erode) or grow (dilate) the mask before inpainting. This is additive to the same setting on the Segmentation tab.")
         shrink_grow_layout.addWidget(self.shrink_grow_slider, 0, 1)

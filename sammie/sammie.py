@@ -1906,6 +1906,17 @@ def _handle_object_removal_view(frame_number, view_options, points, return_numpy
     settings_mgr = get_settings_manager()
     grow = settings_mgr.get_session_setting("inpaint_grow", 0)
     mask = grow_shrink(mask, grow)
+
+    #Edge only blur (hardcoded for testing)
+    blur = 10
+    if blur >0:
+        kernel = np.ones((blur,blur), np.uint8)
+        inner_core = cv2.erode(mask, kernel, iterations=1)
+        outer_bound = cv2.dilate(mask, kernel, iterations=1)
+        blurred = cv2.GaussianBlur(mask,(blur * 2 +1, blur * 2 +1),0)
+        mask = np.where(inner_core > 127,255, blurred)
+        mask = np.where(outer_bound < 127,0, mask).astype(np.uint8)
+
     
     # Draw mask overlay
     if view_options.get("show_removal_mask", True):
@@ -1950,12 +1961,9 @@ def draw_removal_overlay(image, mask):
     # Create a color layer
     color_layer = np.full_like(image, (255,255,255), dtype=np.uint8)
 
-    # Blend color layer and original image where mask > 0
-    overlay = np.where(
-        (mask_3ch > 0),
-        cv2.addWeighted(image, 1 - 0.5, color_layer, 0.5, 0),
-        image
-    )
+    # Blend using mask values for smooth gradient edges
+    alpha = mask_3ch * 0.5  # 50% max opacity
+    overlay = (image.astype(np.float32) * (1 - alpha) + color_layer.astype(np.float32) * alpha).astype(np.uint8)
 
     return overlay
 

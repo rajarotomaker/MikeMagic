@@ -959,6 +959,7 @@ class RemovalManager:
         # Get settings
         minimax_steps = settings_mgr.get_session_setting("minimax_steps", 6)
         inpaint_grow = settings_mgr.get_session_setting("inpaint_grow", 0)
+        inpaint_blur = settings_mgr.get_session_setting("inpaint_blur", 0)
 
         # Pass in a blank image to see what it gets resized to
         blank_image = np.zeros((VideoInfo.height, VideoInfo.width, 1), dtype=np.uint8)
@@ -988,7 +989,7 @@ class RemovalManager:
         # Load and prepare data
         print("Loading frames and masks...")
         QApplication.processEvents()
-        frames, masks = self._load_all_frames_and_masks(points, inpaint_grow=inpaint_grow, start_frame=start_frame, end_frame=end_frame)
+        frames, masks = self._load_all_frames_and_masks(points, inpaint_grow=inpaint_grow,inpaint_blur= inpaint_blur, start_frame=start_frame, end_frame=end_frame)
         
         # Pad frames
         pad_frames = (4 - (frames_to_process % 4)) % 4 + 1
@@ -1055,7 +1056,7 @@ class RemovalManager:
         return True
 
     
-    def _load_all_frames_and_masks(self, points_list, inpaint_grow=5, start_frame=0, end_frame=None):
+    def _load_all_frames_and_masks(self, points_list, inpaint_grow=5, inpaint_blur=0, start_frame=0, end_frame=None):
         """
         Load all frames and corresponding combined masks into memory, while resizing and processing.
         Used for MiniMax-Remover object removal.
@@ -1063,6 +1064,7 @@ class RemovalManager:
         Args:
             points_list (list): List of point dictionaries containing object_id and frame info.
             inpaint_grow (int): Optional grow/shrink parameter for masks.
+            inpaint_blur (int): Optional blur parameter for mask edges.
             start_frame (int): Starting frame (inclusive)
             end_frame (int): Ending frame (inclusive). If None, process to end of video.
 
@@ -1112,7 +1114,16 @@ class RemovalManager:
             frame = self.resize_image_minimax(frame)
             frame = frame.astype(np.float32) / 127.5 - 1.0
             combined_mask = self.resize_image_minimax(combined_mask, mask=True)
-            combined_mask = (combined_mask.astype(np.float32) / 255.0 > 0.5).astype(np.float32)
+
+            # Apply blur to mask edges if requested (after resize, before normalization)
+            if inpaint_blur > 0:
+                blur_kernel = inpaint_blur * 2 + 1  # Must be odd
+                combined_mask = cv2.GaussianBlur(combined_mask, (blur_kernel, blur_kernel), 0)
+                # Normalize to 0-1 range preserving feathered values
+                combined_mask = combined_mask.astype(np.float32) / 255.0
+            else:
+                # Binary threshold when no blur
+                combined_mask = (combined_mask.astype(np.float32) / 255.0 > 0.5).astype(np.float32)
 
             frames.append(frame)
             masks.append(combined_mask)
@@ -1163,11 +1174,40 @@ class RemovalManager:
         # Only apply the inpaint_grow portion (grow was already applied in apply_mask_postprocessing)
         if inpaint_grow != 0:
             original_mask = grow_shrink(original_mask, inpaint_grow)
-        
+
         # Apply feathering to the mask for smoother transitions
-        # Gaussian blur creates a soft edge that blends better
-        feather_radius = 10  # Adjust this value for more/less feathering
+        # Use inpaint_blur setting if set, otherwise use default of 10
+        inpaint_blur = settings_mgr.get_session_setting("inpaint_blur", 0)
+        feather_radius = inpaint_blur if inpaint_blur > 0 else 10
         mask_feathered = cv2.GaussianBlur(original_mask, (feather_radius * 2 + 1, feather_radius * 2 + 1), 0)
+
+                
+        # #Apply edge-only blur from settings
+        # blur = settings_mgr.get_session_setting("inpaint_blur",10)
+
+        # if blur > 0:
+        #     #smaller kernel for erode/dilate to preserve solid center
+        #     morph_size = max(3, blur // 3)
+
+        #     #create square kernel for erode/dilate operations
+        #     kernel = np.ones((morph_size, morph_size), np.uint8)
+            
+        #     # shrink mask inward - this area stays SOLID white (255)
+        #     inner_core = cv2.erode(original_mask, kernel, iterations=1)
+            
+        #     #Expand mask outward- outside this stays solid black
+        #     outer_bound = cv2.dilate(original_mask, kernel, iterations=1)
+
+        #     # Blur entire mask to create gradient values at edges
+        #     blurred = cv2.GaussianBlur(original_mask, (blur * 2 + 1, blur * 2+1),0)
+
+
+        #     mask_feathered = np.where(inner_core > 127, 255, blurred)
+
+        #     mask_feathered = np.where(outer_bound < 127, 0, mask_feathered).astype(np.uint8)
+        # else:
+        #     mask_feathered = original_mask
+
         
         # Convert mask to 3-channel and normalize to [0, 1]
         mask_3channel = np.stack([mask_feathered] * 3, axis=-1).astype(np.float32) / 255.0
@@ -1245,6 +1285,7 @@ class RemovalManager:
         grow = settings_mgr.get_session_setting("grow", 0) # segmentation grow
         inpaint_grow = settings_mgr.get_session_setting("inpaint_grow", 0) # object removal grow
         inpaint_grow = inpaint_grow + grow
+        inpaint_blur = settings_mgr.get_session_setting("inpaint_blur", 0) #mask edge blur
         display_update_frequency = settings_mgr.get_app_setting("display_update_frequency", 5)
 
         # Convert method string to OpenCV constant
@@ -1328,10 +1369,31 @@ class RemovalManager:
             # Apply mask grow/shrink if requested
             if inpaint_grow != 0:
                 combined_mask = grow_shrink(combined_mask, inpaint_grow)
+            
+            # Store original mask for feathered blending
+            feather_mask = None
+            if inpaint_blur > 0:
+                blur_kernel = inpaint_blur * 2 + 1  # Must be odd
+                feather_mask = cv2.GaussianBlur(combined_mask, (blur_kernel, blur_kernel), 0)
+                # Create binary mask for inpainting (threshold at 1 to include feathered area)
+                binary_mask = (feather_mask > 0).astype(np.uint8) * 255
+            else:
+                binary_mask = combined_mask
 
-            # Run inpainting
+            # Run inpainting with binary mask
             try:
-                result = cv2.inpaint(frame, combined_mask, inpaint_radius, cv2_method)
+                inpainted = cv2.inpaint(frame, binary_mask, inpaint_radius, cv2_method)
+
+                # Apply feathered blending if blur is enabled
+                if feather_mask is not None:
+                    # Normalize feather mask to 0-1 range
+                    alpha = feather_mask.astype(np.float32) / 255.0
+                    alpha_3ch = np.dstack([alpha] * 3)
+                    # Blend: result = original * (1 - alpha) + inpainted * alpha
+                    result = frame.astype(np.float32) * (1 - alpha_3ch) + inpainted.astype(np.float32) * alpha_3ch
+                    result = np.clip(result, 0, 255).astype(np.uint8)
+                else:
+                    result = inpainted
 
                 output_filename = os.path.join(removal_dir, f"{frame_number:05d}.png")
                 os.makedirs(os.path.dirname(output_filename), exist_ok=True)
@@ -1908,9 +1970,11 @@ def _handle_object_removal_view(frame_number, view_options, points, return_numpy
     mask = grow_shrink(mask, grow)
 
     #Edge only blur (hardcoded for testing)
-    blur = 10
+    blur = settings_mgr.get_session_setting("inpaint_blur", 0)
+    print(f"Debug: blur value from slider = {blur}")
     if blur >0:
-        kernel = np.ones((blur,blur), np.uint8)
+        morph_size = max(3, blur //3)
+        kernel = np.ones((morph_size, morph_size), np.uint8)
         inner_core = cv2.erode(mask, kernel, iterations=1)
         outer_bound = cv2.dilate(mask, kernel, iterations=1)
         blurred = cv2.GaussianBlur(mask,(blur * 2 +1, blur * 2 +1),0)
@@ -1952,20 +2016,27 @@ def draw_masks(image, processed_masks):
         return image
 
 def draw_removal_overlay(image, mask):
-    """Draw masked overlay on the current frame for object removal"""
+    """Draw masked overlay on the current frame for object removal with feathering support"""
 
     # Normalize mask to 0–1 range
-    mask_norm = mask.astype(np.float32) / 255.0
+    if mask.max() > 1:
+        mask_norm = mask.astype(np.float32) / 255.0
+    else:
+        mask_norm = mask.astype(np.float32)
+
+    # Create 3-channel mask for blending
     mask_3ch = np.dstack([mask_norm] * 3)
 
-    # Create a color layer
-    color_layer = np.full_like(image, (255,255,255), dtype=np.uint8)
+    # Create a color layer (white overlay)
+    color_layer = np.full_like(image, (255, 255, 255), dtype=np.float32)
+    image_float = image.astype(np.float32)
 
-    # Blend using mask values for smooth gradient edges
-    alpha = mask_3ch * 0.5  # 50% max opacity
-    overlay = (image.astype(np.float32) * (1 - alpha) + color_layer.astype(np.float32) * alpha).astype(np.uint8)
+    # Alpha blend: result = image * (1 - alpha) + color * alpha
+    # Using mask values directly for smooth feathered blending
+    alpha = mask_3ch * 0.6  # 60% opacity for overlay
+    overlay = image_float * (1 - alpha) + color_layer * alpha
 
-    return overlay
+    return np.clip(overlay, 0, 255).astype(np.uint8)
 
 def draw_contours(image, processed_masks):
     """Draw colored contours on the current frame (expects preprocessed masks)"""

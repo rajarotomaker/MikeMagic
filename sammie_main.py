@@ -441,7 +441,7 @@ class MattingTab(QWidget):
             ("Gamma:", 1, 1000, "matany_gamma", 1.0,
             "Values < 1.0 darken edges, values > 1.0 brighten edges.",
             lambda v: f"{v/100.0:.1f}", lambda v: int(v * 100), lambda v: v / 100.0),
-            ("Shrink/Grow:", -10, 10, "matany_grow", 0,
+            ("Shrink/Grow:", -100, 100, "matany_grow", 0,
             "Shrink (erode) or grow (dilate) the matted regions.",
             lambda v: str(v), lambda v: v, lambda v: v)
         ]
@@ -709,7 +709,50 @@ class ObjectRemovalTab(QWidget):
         label.doubleClicked.connect(
             lambda: self._reset_slider_to_default(self.shrink_grow_slider, default_grow)
         )
-        
+
+        #-- Blur Slider Start ----
+        # Default values when app starts fresh ( no saved settings)
+        default_blur = 10
+
+        #Load saved value,, or use default if none exists
+        current_blur = settings_mgr.get_session_setting("inpaint_blur", default_blur)
+
+        # Create clickable label (double click to reset)
+        blur_label = ClickableLabel("Blur:")
+        blur_label.setToolTip(f"Double-click to reset to default value ({default_blur})")
+        shrink_grow_layout.addWidget(blur_label,1,0) # Row 1, column 0 
+
+        # Create the slider widget
+        self.blur_slider = QSlider(Qt.Horizontal) # Horizontal slider
+        self.blur_slider.setRange(0,100) #Min=0, Max=100
+        self.blur_slider.setValue(current_blur) #Set Current Value
+        self.blur_slider.setToolTip("Soften mask edges for smoother blending.")
+        shrink_grow_layout.addWidget(self.blur_slider, 1,1)
+
+        #Create label to show numeric value
+        self.blur_value = QLabel(str(current_blur))
+        self.blur_value.setMinimumWidth(30)
+        self.blur_value.setAlignment(Qt.AlignCenter) # Center the text
+        shrink_grow_layout.addWidget(self.blur_value, 1,2)
+
+        # When slider moves -> update the number label
+        self.blur_slider.valueChanged.connect(
+            lambda v: self.blur_value.setText(str(v))
+        )
+
+        #When slider moves -> save value to settings
+        def save_blur(v):
+            print(f"DEBUG: save_blur called with v = {v}")
+            self._save_slider_value("inpaint_blur",v)
+        self.blur_slider.valueChanged.connect(
+            save_blur
+        )
+
+        # Double Click label -> reset slider to default
+        blur_label.doubleClicked.connect(
+            lambda:  self._reset_slider_to_default(self.blur_slider, default_blur)
+        )
+
         layout.addWidget(shrink_grow_group)
         """Show/hide parameter groups based on selected method"""
         current_method = self.method_combo.currentText()
@@ -933,6 +976,11 @@ class ObjectRemovalTab(QWidget):
         self.shrink_grow_slider.setValue(shrink_grow)
         self.shrink_grow_value.setText(str(shrink_grow))
 
+        # Load blur setting
+        blur = settings_mgr.get_session_setting("inpaint_blur", 0)
+        self.blur_slider.setValue(blur)
+        self.blur_value.setText(str(blur))
+
     def update_removal_status(self, is_completed):
         """Update the Run Object Removal button text based on completion state"""
         if is_completed:
@@ -1144,6 +1192,9 @@ class MainWindow(QMainWindow):
             
             # Connect shared shrink/grow slider
             removal_tab.shrink_grow_slider.valueChanged.connect(self._update_current_frame_display)
+            
+            # When blur slider changes -> refresh the preview image
+            removal_tab.blur_slider.valueChanged.connect(self._update_current_frame_display)
             
             # Connect OpenCV parameter controls
             removal_tab.opencv_algorithm_combo.currentTextChanged.connect(self._update_current_frame_display)

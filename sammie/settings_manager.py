@@ -47,6 +47,7 @@ class ApplicationSettings:
     default_inpaint_method: str = "Telea"
     default_inpaint_radius: int = 3
     default_inpaint_grow: int = 5
+    default_inpaint_blur: int = 0
     default_minimax_steps: int = 6
     default_minimax_resolution: int = 480
     default_minimax_vae_tiling: bool = False
@@ -115,6 +116,7 @@ class SessionSettings:
     inpaint_method: str = "Telea"
     inpaint_radius: int = 3
     inpaint_grow: int = 0
+    inpaint_blur: int = 0
     minimax_steps: int = 6
     minimax_resolution: int = 480
     minimax_vae_tiling: bool = False
@@ -273,6 +275,7 @@ class SettingsManager:
             inpaint_method=self.app_settings.default_inpaint_method,
             inpaint_radius=self.app_settings.default_inpaint_radius,
             inpaint_grow=self.app_settings.default_inpaint_grow,
+            inpaint_blur=self.app_settings.default_inpaint_blur,
             minimax_steps=self.app_settings.default_minimax_steps,
             minimax_resolution=self.app_settings.default_minimax_resolution,
             minimax_vae_tiling=self.app_settings.default_minimax_vae_tiling,
@@ -352,6 +355,7 @@ class SettingsManager:
             'inpaint_method': self.session_settings.inpaint_method,
             'inpaint_radius': self.session_settings.inpaint_radius,
             'inpaint_grow': self.session_settings.inpaint_grow,
+            'inpaint_blur': self.session_settings.inpaint_blur,
             'minimax_steps': self.session_settings.minimax_steps,
             'minimax_resolution': self.session_settings.minimax_resolution,
             'minimax_vae_tiling': self.session_settings.minimax_vae_tiling

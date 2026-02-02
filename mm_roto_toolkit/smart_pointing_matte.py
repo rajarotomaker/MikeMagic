@@ -169,7 +169,7 @@ def run_complete_workflow():
         return
 
     # Calculate Target Points
-    TARGET_POINT_COUNT = int(max(10, max_perimeter / 20.0))
+    TARGET_POINT_COUNT = int(max(10, max_perimeter / 40.0))
     print(f"Global Target Points calculated: {TARGET_POINT_COUNT}")
 
     # --------------------------------------------

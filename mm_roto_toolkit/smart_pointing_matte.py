@@ -2,104 +2,79 @@ import nuke
 import cv2
 import numpy as np
 import os
-import json
 
 try:
     import _curveknob
 except ImportError:
     pass
 
+# --- Helper Functions (Same as before) ---
+
 def _clean_matte_crisp(img):
-    """
-    Enhance whites/blacks to create a solid, crisp matte.
-    """
-    # Contrast Stretch
     float_img = img.astype(float)
     contrast = 2.0 
     float_img = (float_img - 128) * contrast + 128
     float_img = np.clip(float_img, 0, 255).astype(np.uint8)
     
-    # Denoise
     denoised = cv2.GaussianBlur(float_img, (9, 9), 0)
-    
-    # Otsu Threshold + Morph Close
     _, binary = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
-    # Morph kernel to fill small gaps
     kernel = np.ones((7, 7), np.uint8) 
     solid = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-    
     return solid
 
-def _format_linear_points(points):
-    """
-    Returns points with ZERO tangents. 
-    This prevents any curvature ('feathers') and results in a hard poly-line.
-    """
+def _calculate_smooth_tangents(points):
     result = []
     pts = points.reshape(-1, 2)
+    count = len(pts)
     
-    for curr in pts:
-        # By setting 'in' and 'out' equal to 'anchor', the tangent length is 0.
-        # This forces Nuke to treat the segment as a straight line.
-        data = {
-            "anchor": curr.tolist(), 
-            "in": curr.tolist(), 
-            "out": curr.tolist()
-        }
+    for i in range(count):
+        prev = pts[i-1]
+        curr = pts[i]
+        nxt = pts[(i+1) % count]
+        
+        chord = nxt - prev
+        
+        v1 = prev - curr
+        v2 = nxt - curr
+        angle = 180.0
+        if np.linalg.norm(v1) > 0 and np.linalg.norm(v2) > 0:
+            angle = np.degrees(np.arccos(np.clip(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1.0, 1.0)))
+
+        if angle < 110.0: # Sharp Corner
+            data = {"anchor": curr.tolist(), "in": curr.tolist(), "out": curr.tolist()}
+        else:
+            smoothing = 0.25 
+            t_in = curr - (chord * smoothing)
+            t_out = curr + (chord * smoothing)
+            data = {"anchor": curr.tolist(), "in": t_in.tolist(), "out": t_out.tolist()}
+            
         result.append(data)
     return result
 
 def _align_contour_indices(prev_pts, curr_pts):
-    """
-    Rotates the array of current points so that index 0 
-    is closest to index 0 of the previous frame.
-    Prevents the shape from 'spinning'.
-    """
     if prev_pts is None: return curr_pts
-    
-    p0 = prev_pts[0, 0] # (x, y)
-    
-    # Find point in curr_pts closest to p0
+    p0 = prev_pts[0, 0]
     curr_flat = curr_pts.reshape(-1, 2)
     dists = np.sum((curr_flat - p0)**2, axis=1)
     best_idx = np.argmin(dists)
-    
-    # Rotate array
     aligned = np.roll(curr_pts, -best_idx, axis=0)
     return aligned
 
 def _resample_curve_to_n(contour, n_points):
-    """
-    Resamples a contour to exactly n_points spaced equally by arc length.
-    Returns array of shape (n_points, 1, 2) to match CV2 format.
-    """
-    # Ensure standard numpy shape (N, 2)
     pts = contour.reshape(-1, 2).astype(float)
-    
-    # Calculate distance between each consecutive point
-    # np.vstack puts the first point at the end to close the loop for measurement
     closed_pts = np.vstack((pts, pts[0]))
-    
-    # Calculate Euclidean distance between points
     diffs = closed_pts[1:] - closed_pts[:-1]
     dists = np.sqrt((diffs ** 2).sum(axis=1))
-    
-    # Calculate cumulative distance (0.0, dist_0, dist_0+dist_1, ...)
     cum_dists = np.concatenate(([0], np.cumsum(dists)))
     total_len = cum_dists[-1]
-    
-    # Create the target distances (equally spaced)
     target_dists = np.linspace(0, total_len, n_points, endpoint=False)
-    
-    # Interpolate X and Y coordinates separately based on target distances
     new_x = np.interp(target_dists, cum_dists, closed_pts[:, 0])
     new_y = np.interp(target_dists, cum_dists, closed_pts[:, 1])
-    
-    # Combine and reshape to (N, 1, 2)
     resampled = np.column_stack((new_x, new_y)).astype(np.float32)
     return resampled.reshape(-1, 1, 2)
 
+# --- Main Workflow ---
 
 def run_complete_workflow():
     # --------------------------------------------
@@ -122,10 +97,10 @@ def run_complete_workflow():
     first = int(read['first'].value())
     last = int(read['last'].value())
     
-    task = nuke.ProgressTask("MM-Roto: Linear Shaping")
+    task = nuke.ProgressTask("MM-Roto: Adaptive Shaping")
 
     # --------------------------------------------
-    # STEP 1: CLEAN & ANALYZE (Determine Point Count)
+    # STEP 1: CLEAN & ANALYZE
     # --------------------------------------------
     processed_paths = []
     max_perimeter = 0.0
@@ -151,12 +126,10 @@ def run_complete_workflow():
             processed_paths.append(None)
             continue
 
-        # Clean
         clean = _clean_matte_crisp(img)
         cv2.imwrite(out_path, clean)
         processed_paths.append(out_path)
         
-        # Measure Perimeter
         contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             cnt = max(contours, key=cv2.contourArea)
@@ -168,20 +141,17 @@ def run_complete_workflow():
         nuke.message("No matte content found.")
         return
 
-    # Calculate Target Points
     TARGET_POINT_COUNT = int(max(10, max_perimeter / 40.0))
     print(f"Global Target Points calculated: {TARGET_POINT_COUNT}")
 
     # --------------------------------------------
-    # STEP 2: GENERATE SHAPES (Resample per frame)
+    # STEP 2: GENERATE SHAPES
     # --------------------------------------------
-    
-    roto_animation = {} # { frame: [point_data] }
-    prev_points_array = None # For index alignment
+    roto_animation = {} 
+    prev_points_array = None 
     
     for i, f_path in enumerate(processed_paths):
         if task.isCancelled(): return
-        
         current_frame = first + i
         task.setMessage(f"Solving Frame {current_frame}")
         task.setProgress(30 + int((i/len(processed_paths)) * 60))
@@ -196,11 +166,8 @@ def run_complete_workflow():
             continue
             
         raw_cnt = max(contours, key=cv2.contourArea)
-        
-        # RESAMPLE
         resampled = _resample_curve_to_n(raw_cnt, TARGET_POINT_COUNT)
         
-        # ALIGN
         if prev_points_array is not None:
             aligned = _align_contour_indices(prev_points_array, resampled)
         else:
@@ -208,11 +175,10 @@ def run_complete_workflow():
             
         prev_points_array = aligned
         
-        # CHANGED: Use linear formatting instead of smooth tangents
-        roto_animation[current_frame] = _format_linear_points(aligned)
+        roto_animation[current_frame] = _calculate_smooth_tangents(aligned)
 
     # --------------------------------------------
-    # STEP 3: BUILD ROTO
+    # STEP 3: BUILD ROTO (Corrected for Zero Feather)
     # --------------------------------------------
     task.setMessage("Building Roto Node...")
     task.setProgress(95)
@@ -223,15 +189,13 @@ def run_complete_workflow():
     root = curves.rootLayer
     
     shape = _curveknob.Shape(curves)
-    shape.name = "AutoMatte_Linear"
+    shape.name = "AutoMatte_Hard"
     root.append(shape)
     
-    # Create Points
     for _ in range(TARGET_POINT_COUNT):
         shape.append(_curveknob.ShapeControlPoint())
         
     H = float(nuke.root().height())
-    
     frames_sorted = sorted(roto_animation.keys())
     
     for frame in frames_sorted:
@@ -244,16 +208,28 @@ def run_complete_workflow():
             ix, iy = pt_data['in']
             ox, oy = pt_data['out']
             
-            # Keyframe
-            cp.center.addPositionKey(frame, (ax, H - ay, 0))
+            # --- TANGENT CALCULATION ---
+            # Calculate the relative vectors for the main curve
+            left_vec = (ix - ax, (H - iy) - (H - ay), 0)
+            right_vec = (ox - ax, (H - oy) - (H - ay), 0)
             
-            # These will now be (0,0,0), creating a hard corner
-            cp.leftTangent.addPositionKey(frame, (ix - ax, (H - iy) - (H - ay), 0))
-            cp.rightTangent.addPositionKey(frame, (ox - ax, (H - oy) - (H - ay), 0))
+            # 1. Set Main Curve Tangents
+            cp.center.addPositionKey(frame, (ax, H - ay, 0))
+            cp.leftTangent.addPositionKey(frame, left_vec)
+            cp.rightTangent.addPositionKey(frame, right_vec)
+            
+            # 2. FORCE FEATHER MATCH
+            # To remove the feather visibility, the feather curve must match the main curve.
+            # Feather Center = (0,0,0) offset (sits on main point)
+            # Feather Tangents = SAME vectors as Main Tangents (curves with main shape)
+            cp.featherCenter.addPositionKey(frame, (0, 0, 0))
+            cp.featherLeftTangent.addPositionKey(frame, left_vec)
+            cp.featherRightTangent.addPositionKey(frame, right_vec)
 
     curves.changed()
     task.setProgress(100)
-    print("MM-Roto: Complete (Linear).")
+    print("MM-Roto: Complete (Exact Hard Edge).")
 
 if __name__ == "__main__":
     run_complete_workflow()
+    

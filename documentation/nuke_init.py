@@ -1,1 +1,2 @@
-exec(open("D:/MikeMagic/nuke_loader/init.py").read())
+MIKEMAGIC_ROOT = "D:/MikeMagic"
+exec(open(MIKEMAGIC_ROOT + "/nuke_loader/init.py").read())

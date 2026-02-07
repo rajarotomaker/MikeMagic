@@ -12,7 +12,7 @@ import hashlib
 # ============================================================================
 # CONFIGURATION - Update this path to your MikeMagic installation
 # ============================================================================
-MIKE_MAGIC_PATH = r"D:\MikeMagic\run_mm.bat"
+MIKE_MAGIC_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run_mm.bat")
 # ============================================================================
 
 # Formats MikeMagic already supports - pass directly, no conversion

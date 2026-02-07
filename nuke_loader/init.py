@@ -7,7 +7,10 @@ import sys
 import os
 
 # MikeMagic root - hardcoded for reliability with exec()
-MIKEMAGIC_ROOT = "D:/MikeMagic"
+if 'MIKEMAGIC_ROOT' not in globals():
+    MIKEMAGIC_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print(MIKEMAGIC_ROOT)
+# sys.exit(0)
 
 # Add MikeMagic to Python path
 if MIKEMAGIC_ROOT not in sys.path:
@@ -17,7 +20,7 @@ if MIKEMAGIC_ROOT not in sys.path:
 nuke.pluginAddPath(f"{MIKEMAGIC_ROOT}/mike_magic")
 
 # External tools (pyd_playground)
-# nuke.pluginAddPath("D:/pyd_playground/cotracker_roto/MMTracker_for_nuke/gizmos")
+nuke.pluginAddPath("D:/pyd_playground/cotracker_roto/MMTracker_for_nuke")
 
 # Initialize mm_roto_toolkit
 if nuke.GUI:

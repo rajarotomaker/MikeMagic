@@ -40,7 +40,7 @@ class ApplicationSettings:
     # MatAnyone Processing defaults
     default_matany_grow: int = 0
     default_matany_gamma: float = 1.0
-    default_matany_res: int = 720
+    default_matany_res: int = 1080
 
     # Object Removal Processing defaults
     default_removal_method: str = "Minimax-Remover"

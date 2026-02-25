@@ -42,6 +42,15 @@ class ApplicationSettings:
     default_matany_gamma: float = 1.0
     default_matany_res: int = 1080
 
+    # VideoMaMa (VideoBuddy) defaults
+    default_matte_method: str = "matanyone"          # "matanyone" | "videomama"
+    default_videomama_num_frames: int = 16
+    default_videomama_res_w: int = 1024
+    default_videomama_res_h: int = 576
+    default_videomama_mask_cond_mode: str = "vae"    # "vae" | "interpolate"
+    default_videomama_mixed_precision: str = "fp16"  # "fp16" | "bf16" | "no"
+    videomama_svd_path: str = "checkpoints/stable-video-diffusion-img2vid-xt"
+
     # Object Removal Processing defaults
     default_removal_method: str = "Minimax-Remover"
     default_inpaint_method: str = "Telea"

@@ -858,6 +858,254 @@ class MatAnyManager:
         self.propagated = False
         print("Matting data cleared")
 
+
+class VideoMaMaManager:
+    """Manager for VideoMaMa (VideoBuddy) SVD-based video matting"""
+
+    def __init__(self):
+        self.pipeline = None
+        self.propagated = False
+        self.callbacks = []
+
+    def add_callback(self, callback):
+        """Add callback for matting events"""
+        self.callbacks.append(callback)
+
+    def _notify(self, action, **kwargs):
+        """Notify callbacks of changes"""
+        for callback in self.callbacks:
+            try:
+                callback(action, **kwargs)
+            except Exception as e:
+                print(f"Callback error: {e}")
+
+    def load_videomama_model(self, load_to_cpu=False):
+        """Load VideoMaMa pipeline via VideoInferencePipeline (SVD + fine-tuned UNet)"""
+        import sys
+        videomama_path = os.path.abspath("./videomama")
+        if videomama_path not in sys.path:
+            sys.path.insert(0, videomama_path)
+
+        from pipeline_svd_mask import VideoInferencePipeline
+
+        DeviceManager.clear_cache()
+        settings_mgr = get_settings_manager()
+
+        if load_to_cpu:
+            device_str = "cpu"
+        else:
+            device = DeviceManager.get_device()
+            # VideoInferencePipeline only supports cuda/cpu (not MPS)
+            device_str = "cuda" if device.type == "cuda" else "cpu"
+
+        svd_path = settings_mgr.get_app_setting(
+            "videomama_svd_path", "./checkpoints/stable-video-diffusion-img2vid-xt"
+        )
+        unet_path = "./checkpoints/videomama_unet"
+        mixed_precision = settings_mgr.get_app_setting("default_videomama_mixed_precision", "fp16")
+
+        if mixed_precision == "fp16":
+            dtype = torch.float16
+        elif mixed_precision == "bf16":
+            dtype = torch.bfloat16
+        else:
+            dtype = torch.float32
+
+        self.pipeline = VideoInferencePipeline(
+            base_model_path=svd_path,
+            unet_checkpoint_path=unet_path,
+            device=device_str,
+            weight_dtype=dtype,
+        )
+        print(f"[VideoBuddy] Loaded VideoMaMa model on {device_str}")
+
+    def unload_videomama_model(self):
+        """Unload VideoMaMa pipeline and clear cache"""
+        self.pipeline = None
+        DeviceManager.clear_cache()
+        print("[VideoBuddy] Unloaded VideoMaMa model")
+
+    def offload_model_to_cpu(self):
+        """Offload VideoMaMa sub-models to CPU to free VRAM"""
+        if self.pipeline is None:
+            return
+        device = DeviceManager.get_device()
+        if device.type == 'cpu':
+            return
+        self.pipeline.image_encoder.to('cpu')
+        self.pipeline.vae.to('cpu')
+        self.pipeline.unet.to('cpu')
+        self.pipeline.device = torch.device('cpu')
+        DeviceManager.clear_cache()
+
+    def load_model_to_device(self):
+        """Move VideoMaMa sub-models back to the active device"""
+        if self.pipeline is None:
+            return
+        device = DeviceManager.get_device()
+        if device.type == 'cpu':
+            return
+        dtype = self.pipeline.weight_dtype
+        self.pipeline.image_encoder.to(device, dtype=dtype)
+        self.pipeline.vae.to(device, dtype=dtype)
+        self.pipeline.unet.to(device, dtype=dtype)
+        self.pipeline.device = device
+
+    def clear_matting(self):
+        """Clear matting data"""
+        if os.path.exists(matting_dir):
+            shutil.rmtree(matting_dir)
+        os.makedirs(matting_dir)
+        self.propagated = False
+        print("[VideoBuddy] Matting data cleared")
+
+    @torch.inference_mode()
+    def run_matting(self, points_list, parent_window):
+        """
+        Run VideoMaMa matting on all frames for each object.
+
+        Reads frames from frames_dir and masks from mask_dir,
+        processes in chunks of num_frames via VideoInferencePipeline.run(),
+        writes alpha mattes to matting_dir/{frame:05d}/{object_id}.png
+        (same format as MatAnyManager).
+
+        Returns:
+            int: 1 if successful, 0 if cancelled/failed
+        """
+        from PIL import Image as PILImage
+        from PySide6.QtWidgets import QApplication
+
+        if self.pipeline is None:
+            print("[VideoBuddy] Model not loaded")
+            return 0
+
+        DeviceManager.clear_cache()
+        frame_count = VideoInfo.total_frames
+        settings_mgr = get_settings_manager()
+        in_point = settings_mgr.get_session_setting("in_point", None)
+        out_point = settings_mgr.get_session_setting("out_point", None)
+
+        start_frame = in_point if in_point is not None else 0
+        end_frame = out_point if out_point is not None else frame_count - 1
+        frames_to_process = end_frame - start_frame + 1
+
+        print(f"[VideoBuddy] Processing frames {start_frame} to {end_frame} ({frames_to_process} frames)")
+
+        # Collect unique object IDs
+        object_ids = sorted(list(set(
+            p['object_id'] for p in points_list if 'object_id' in p
+        )))
+        if not object_ids:
+            print("[VideoBuddy] No objects found for matting")
+            return 0
+
+        # Read VideoMaMa parameters from settings
+        num_frames = settings_mgr.get_session_setting("videomama_num_frames", 16)
+        width = settings_mgr.get_session_setting("videomama_res_w", 1024)
+        height = settings_mgr.get_session_setting("videomama_res_h", 576)
+        mask_cond_mode = settings_mgr.get_session_setting("videomama_mask_cond_mode", "vae")
+
+        # Build list of (absolute_frame_number, file_path) for the range
+        extension = get_frame_extension()
+        frame_paths = []
+        for fn in range(start_frame, end_frame + 1):
+            fp = os.path.join(frames_dir, f"{fn:05d}.{extension}")
+            if os.path.exists(fp):
+                frame_paths.append((fn, fp))
+
+        if not frame_paths:
+            print("[VideoBuddy] No frame files found in range")
+            return 0
+
+        os.makedirs(matting_dir, exist_ok=True)
+
+        total_ops = len(object_ids) * len(frame_paths)
+        progress_dialog = QProgressDialog(
+            "Running VideoBuddy matting...", "Cancel", 0, 100, parent_window
+        )
+        progress_dialog.setWindowTitle("VideoBuddy Progress")
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setAutoClose(True)
+        progress_dialog.show()
+
+        ops_done = 0
+
+        # Load all frame images once and resize to VideoMaMa inference dimensions
+        images = [
+            PILImage.open(fp).convert("RGB").resize((width, height), PILImage.LANCZOS)
+            for _, fp in frame_paths
+        ]
+
+        for object_id in object_ids:
+            if progress_dialog.wasCanceled():
+                break
+
+            # Load and resize masks for this object (one per frame)
+            blank = PILImage.new("L", (width, height), 0)
+            masks = []
+            for fn, _ in frame_paths:
+                mask_path = os.path.join(mask_dir, f"{fn:05d}", f"{object_id}.png")
+                if os.path.exists(mask_path):
+                    m = PILImage.open(mask_path).convert("L").resize((width, height), PILImage.NEAREST)
+                    # Binarize: model expects clean 0/255 masks (matches official inference script)
+                    m = m.point(lambda p: 255 if p > 127 else 0, mode='L')
+                    masks.append(m)
+                else:
+                    masks.append(blank.copy())
+
+            # Process in sliding chunks of num_frames
+            total_chunks = max(1, (len(images) + num_frames - 1) // num_frames)
+
+            for chunk_idx in range(total_chunks):
+                if progress_dialog.wasCanceled():
+                    break
+
+                chunk_start = chunk_idx * num_frames
+                chunk_end = min(chunk_start + num_frames, len(images))
+                chunk_images = images[chunk_start:chunk_end]
+                chunk_masks = masks[chunk_start:chunk_end]
+
+                # VideoInferencePipeline.run() returns list[PIL.Image] directly
+                output_frames = self.pipeline.run(
+                    cond_frames=chunk_images,
+                    mask_frames=chunk_masks,
+                    seed=42,
+                    mask_cond_mode=mask_cond_mode,
+                    fps=7,
+                    motion_bucket_id=127,
+                    noise_aug_strength=0.0,
+                )
+
+                for i, alpha_img in enumerate(output_frames):
+                    fn = frame_paths[chunk_start + i][0]
+                    out_dir = os.path.join(matting_dir, f"{fn:05d}")
+                    os.makedirs(out_dir, exist_ok=True)
+                    # Convert to grayscale and resize back to original video dimensions
+                    if alpha_img.mode != "L":
+                        alpha_img = alpha_img.convert("L")
+                    alpha_img = alpha_img.resize(
+                        (VideoInfo.width, VideoInfo.height), PILImage.LANCZOS
+                    )
+                    alpha_img.save(os.path.join(out_dir, f"{object_id}.png"))
+
+                ops_done += len(chunk_images)
+                progress_dialog.setValue(int(ops_done * 100 / total_ops))
+                QApplication.processEvents()
+                DeviceManager.clear_cache()
+
+        if progress_dialog.wasCanceled():
+            print("[VideoBuddy] Matting cancelled")
+            self.propagated = False
+            progress_dialog.close()
+            return 0
+
+        progress_dialog.setValue(100)
+        self.propagated = (frame_count == frames_to_process)
+        print("[VideoBuddy] Matting completed")
+        self._notify('matting_complete')
+        return 1
+
+
 class RemovalManager:
     """Manager for object removal operations"""
     

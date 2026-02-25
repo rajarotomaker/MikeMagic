@@ -10,6 +10,9 @@ checkpoints/sam2.1_hiera_large.pt
 checkpoints/transformer/diffusion_pytorch_model.safetensors
 checkpoints/vae/diffusion_pytorch_model.safetensors
 checkpoints/efficienttam_s_512x512.pt
+checkpoints/videomama_unet/
+checkpoints/stable-video-diffusion-img2vid-xt/
+nul
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

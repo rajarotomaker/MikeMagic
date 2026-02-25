@@ -4,6 +4,7 @@ import hashlib
 from tqdm import tqdm
 
 
+# Single-file checkpoints downloaded by direct URL
 _links = [
     ('https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt', '2b30654b6112c42a115563c638d238d9', 'checkpoints'),
     ('https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt', 'ec7bd7d23d280d5e3cfa45984c02eda5', 'checkpoints'),
@@ -13,15 +14,23 @@ _links = [
     ('https://huggingface.co/zibojia/minimax-remover/resolve/main/vae/diffusion_pytorch_model.safetensors','3f80444947443d8f36c0ed2497c20c8d', 'checkpoints/vae'),
 ]
 
+# Multi-file HuggingFace model repos (diffusers pipelines with configs + weights)
+# These cannot be reduced to single URLs — snapshot_download fetches the full repo structure
+# (repo_id, local_dir)
+_hf_repos = [
+    ('SammyLim/VideoMaMa',                             'checkpoints/videomama_unet'),
+    ('stabilityai/stable-video-diffusion-img2vid-xt',  'checkpoints/stable-video-diffusion-img2vid-xt'),
+]
+
+
 def download_models():
+    # --- Single-file direct downloads (existing pattern) ---
     for link, md5, directory in _links:
-        # Create directory if it doesn't exist
         os.makedirs(directory, exist_ok=True)
-        
-        # download file if not exists with a progressbar
+
         filename = link.split('/')[-1]
         filepath = os.path.join(directory, filename)
-        
+
         if not os.path.exists(filepath) or hashlib.md5(open(filepath, 'rb').read()).hexdigest() != md5:
             print(f'Downloading {filename} to {directory}...')
             r = requests.get(link, stream=True)
@@ -37,7 +46,17 @@ def download_models():
                 raise RuntimeError('Error while downloading %s' % filename)
         else:
             print(f'{filename} already downloaded in {directory}.')
-            
+
+    # --- Multi-file HuggingFace repos (VideoMaMa UNet + SVD base model) ---
+    from huggingface_hub import snapshot_download
+    for repo_id, local_dir in _hf_repos:
+        os.makedirs(local_dir, exist_ok=True)
+        if not os.listdir(local_dir):
+            print(f'Downloading HF repo {repo_id} to {local_dir}...')
+            snapshot_download(repo_id=repo_id, local_dir=local_dir)
+        else:
+            print(f'{local_dir} already downloaded.')
+
 
 if __name__ == '__main__':
     download_models()

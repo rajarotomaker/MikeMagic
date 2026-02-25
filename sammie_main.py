@@ -6,10 +6,11 @@ import traceback
 import webbrowser
 from datetime import datetime
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QFileDialog, QVBoxLayout, QHBoxLayout, 
-    QGridLayout, QWidget, QPushButton, QLabel, QStatusBar, QSlider, 
+    QApplication, QMainWindow, QFileDialog, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QWidget, QPushButton, QLabel, QStatusBar, QSlider,
     QTabWidget, QSpinBox, QComboBox, QSplitter, QGroupBox, QTextEdit,
-    QCheckBox, QLineEdit, QMessageBox, QProgressDialog, QDialog
+    QCheckBox, QLineEdit, QMessageBox, QProgressDialog, QDialog,
+    QRadioButton, QStackedWidget, QButtonGroup
 )
 from PySide6.QtGui import (
     QPixmap, QAction, QShortcut, QKeySequence, QTextCursor, QIcon, QFont
@@ -347,19 +348,32 @@ class SegmentationTab(QWidget):
 
 class MattingTab(QWidget):
     """Tab containing matting controls and parameters"""
-    
+
     def __init__(self):
         super().__init__()
         self._init_ui()
-    
+
     def _init_ui(self):
         """Initialize the matting tab layout"""
         layout = QVBoxLayout(self)
 
-        # Instructions
-        # self._create_instructions_section(layout)
+        # --- Engine selector ---
+        engine_group = QGroupBox("Matte Engine")
+        engine_layout = QHBoxLayout(engine_group)
+        self._engine_btn_group = QButtonGroup(self)
+        self.matbuddy_radio = QRadioButton("MatBuddy")
+        self.matbuddy_radio.setToolTip("MatAnyone — frame-by-frame alpha matting")
+        self.videobuddy_radio = QRadioButton("VideoBuddy")
+        self.videobuddy_radio.setToolTip("VideoMaMa — diffusion-based video matting")
+        self._engine_btn_group.addButton(self.matbuddy_radio, 0)
+        self._engine_btn_group.addButton(self.videobuddy_radio, 1)
+        self.matbuddy_radio.setChecked(True)
+        engine_layout.addWidget(self.matbuddy_radio)
+        engine_layout.addWidget(self.videobuddy_radio)
+        engine_layout.addStretch()
+        layout.addWidget(engine_group)
 
-        # Run/Clear button
+        # --- Shared Run / Clear buttons ---
         matting_group = QGroupBox("Matting")
         matting_layout = QVBoxLayout(matting_group)
         self.run_matting_btn = QPushButton(" Run Matting ")
@@ -369,29 +383,154 @@ class MattingTab(QWidget):
         self.clear_matting_btn.setToolTip("Remove all matting data")
         matting_layout.addWidget(self.clear_matting_btn)
         layout.addWidget(matting_group)
-        
-        # MatAnyone Internal Resolution selection
-        res_group = QGroupBox("Resolution Settings")
+
+        # --- Engine-specific settings (stacked) ---
+        self._engine_stack = QStackedWidget()
+        self._engine_stack.addWidget(self._create_matbuddy_widget())   # index 0
+        self._engine_stack.addWidget(self._create_videobuddy_widget())  # index 1
+        layout.addWidget(self._engine_stack)
+
+        # --- Shared postprocessing sliders ---
+        self._create_parameter_sliders(layout)
+
+        layout.addStretch()
+
+        # Connect engine toggle
+        self.matbuddy_radio.toggled.connect(self._on_method_changed)
+        self._load_method_from_settings()
+
+    # ------------------------------------------------------------------
+    # Engine selector
+    # ------------------------------------------------------------------
+
+    def _on_method_changed(self, checked):
+        """Switch stacked widget and save setting when engine radio changes"""
+        if self.matbuddy_radio.isChecked():
+            self._engine_stack.setCurrentIndex(0)
+            method = "matanyone"
+        else:
+            self._engine_stack.setCurrentIndex(1)
+            method = "videomama"
+        get_settings_manager().set_session_setting("matte_method", method)
+
+    def _load_method_from_settings(self):
+        """Restore the last-used matte engine from settings"""
+        method = get_settings_manager().get_session_setting("matte_method", "matanyone")
+        if method == "videomama":
+            self.videobuddy_radio.setChecked(True)
+            self._engine_stack.setCurrentIndex(1)
+        else:
+            self.matbuddy_radio.setChecked(True)
+            self._engine_stack.setCurrentIndex(0)
+
+    def get_selected_method(self):
+        """Return the currently selected matte engine: 'matanyone' or 'videomama'"""
+        return "videomama" if self.videobuddy_radio.isChecked() else "matanyone"
+
+    # ------------------------------------------------------------------
+    # MatBuddy (MatAnyone) settings widget
+    # ------------------------------------------------------------------
+
+    def _create_matbuddy_widget(self):
+        """Create the MatBuddy-specific settings panel"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        res_group = QGroupBox("MatBuddy Settings")
         res_layout = QHBoxLayout(res_group)
-        
         res_label = QLabel("Internal Resolution:")
         self.matany_res_combo = QComboBox()
         self.matany_res_combo.addItems(["480", "720", "1080", "1440", "2160", "Full"])
-        self.matany_res_combo.setToolTip("If your video's resolution is higher than this, it will be\ndownsampled to this resolution before running matting.\nThis reduces VRAM requirements and increases processing speed.")
-        
-        # Connect to save settings when changed
+        self.matany_res_combo.setToolTip(
+            "If your video's resolution is higher than this, it will be\n"
+            "downsampled before running matting.\n"
+            "Reduces VRAM and increases speed."
+        )
         self.matany_res_combo.currentTextChanged.connect(self._save_resolution_setting)
-        
         res_layout.addWidget(res_label)
         res_layout.addWidget(self.matany_res_combo)
         res_layout.addStretch()
-        
         layout.addWidget(res_group)
-
-        # Parameters
-        self._create_parameter_sliders(layout)
-        
         layout.addStretch()
+        return widget
+
+    # ------------------------------------------------------------------
+    # VideoBuddy (VideoMaMa) settings widget
+    # ------------------------------------------------------------------
+
+    def _create_videobuddy_widget(self):
+        """Create the VideoBuddy-specific settings panel"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        settings_mgr = get_settings_manager()
+
+        vb_group = QGroupBox("VideoBuddy Settings")
+        grid = QGridLayout(vb_group)
+
+        # Width
+        grid.addWidget(QLabel("Width:"), 0, 0)
+        self.vb_width_spin = QSpinBox()
+        self.vb_width_spin.setRange(256, 2048)
+        self.vb_width_spin.setSingleStep(64)
+        self.vb_width_spin.setValue(
+            settings_mgr.get_session_setting("videomama_res_w", 1024)
+        )
+        self.vb_width_spin.setToolTip("Output width for VideoMaMa inference")
+        self.vb_width_spin.valueChanged.connect(
+            lambda v: get_settings_manager().set_session_setting("videomama_res_w", v)
+        )
+        grid.addWidget(self.vb_width_spin, 0, 1)
+
+        # Height
+        grid.addWidget(QLabel("Height:"), 1, 0)
+        self.vb_height_spin = QSpinBox()
+        self.vb_height_spin.setRange(256, 2048)
+        self.vb_height_spin.setSingleStep(64)
+        self.vb_height_spin.setValue(
+            settings_mgr.get_session_setting("videomama_res_h", 576)
+        )
+        self.vb_height_spin.setToolTip("Output height for VideoMaMa inference")
+        self.vb_height_spin.valueChanged.connect(
+            lambda v: get_settings_manager().set_session_setting("videomama_res_h", v)
+        )
+        grid.addWidget(self.vb_height_spin, 1, 1)
+
+        # Chunk frames
+        grid.addWidget(QLabel("Chunk Frames:"), 2, 0)
+        self.vb_frames_spin = QSpinBox()
+        self.vb_frames_spin.setRange(1, 64)
+        self.vb_frames_spin.setValue(
+            settings_mgr.get_session_setting("videomama_num_frames", 16)
+        )
+        self.vb_frames_spin.setToolTip("Number of frames processed per chunk (default: 16)")
+        self.vb_frames_spin.valueChanged.connect(
+            lambda v: get_settings_manager().set_session_setting("videomama_num_frames", v)
+        )
+        grid.addWidget(self.vb_frames_spin, 2, 1)
+
+        # Mask conditioning mode
+        grid.addWidget(QLabel("Mask Cond:"), 3, 0)
+        self.vb_mask_cond_combo = QComboBox()
+        self.vb_mask_cond_combo.addItems(["vae", "interpolate"])
+        self.vb_mask_cond_combo.setToolTip(
+            "vae: encode mask via VAE (higher quality)\n"
+            "interpolate: lightweight mask conditioning"
+        )
+        saved_mode = settings_mgr.get_session_setting("videomama_mask_cond_mode", "vae")
+        idx = self.vb_mask_cond_combo.findText(saved_mode)
+        if idx >= 0:
+            self.vb_mask_cond_combo.setCurrentIndex(idx)
+        self.vb_mask_cond_combo.currentTextChanged.connect(
+            lambda v: get_settings_manager().set_session_setting("videomama_mask_cond_mode", v)
+        )
+        grid.addWidget(self.vb_mask_cond_combo, 3, 1)
+
+        layout.addWidget(vb_group)
+        layout.addStretch()
+        return widget
     
     def _create_instructions_section(self, layout):
         """Create the instructions section for the matting tab"""
@@ -1026,6 +1165,7 @@ class MainWindow(QMainWindow):
         self.play_timer.timeout.connect(self.play_next_frame)
         self.sam_manager = sammie.SamManager()
         self.matany_manager = sammie.MatAnyManager()
+        self.videomama_manager = sammie.VideoMaMaManager()
         self.removal_manager = sammie.RemovalManager()
         self.point_manager = sammie.PointManager()
         self.highlighted_point = None
@@ -1112,7 +1252,7 @@ class MainWindow(QMainWindow):
         # Save tracking state
         settings_mgr.set_session_setting("is_propagated", self.sam_manager.propagated)
         settings_mgr.set_session_setting("is_deduplicated", self.sam_manager.deduplicated)
-        settings_mgr.set_session_setting("is_matted", self.matany_manager.propagated)
+        settings_mgr.set_session_setting("is_matted", self.matany_manager.propagated or self.videomama_manager.propagated)
         settings_mgr.set_session_setting("is_removed", self.removal_manager.propagated)
 
     # ==================== SIGNAL CONNECTIONS ====================
@@ -1744,9 +1884,10 @@ class MainWindow(QMainWindow):
             self.sam_manager.propagated = False
             self.sam_manager.deduplicated = False
             self.matany_manager.propagated = False
+            self.videomama_manager.propagated = False
             self.removal_manager.propagated = False
             # No image update here - wait for segmentation to complete
-            
+
         elif action == 'remove_last':
             point = kwargs.get('point')
             if point:
@@ -1769,6 +1910,7 @@ class MainWindow(QMainWindow):
             self.sam_manager.propagated = False
             self.sam_manager.deduplicated = False
             self.matany_manager.propagated = False
+            self.videomama_manager.propagated = False
             self.removal_manager.propagated = False
             # No image update here - wait for segmentation to complete
             self._refresh_table()
@@ -1777,6 +1919,7 @@ class MainWindow(QMainWindow):
             self.sam_manager.clear_tracking()
             self.sam_manager.deduplicated = False
             self.matany_manager.propagated = False
+            self.videomama_manager.propagated = False
             self.removal_manager.propagated = False
             # Rebuild the entire table and update display
             self._refresh_table()
@@ -1792,11 +1935,12 @@ class MainWindow(QMainWindow):
                 self.sam_manager.predictor.reset_state(self.sam_manager.inference_state)
                 self.sam_manager.propagated = False
                 self.matany_manager.propagated = False
+                self.videomama_manager.propagated = False
                 self.removal_manager.propagated = False
             # Rebuild the entire table and update display
             self._refresh_table()
             self._update_current_frame_display()
-            
+
         elif action == 'load_all':
             # Rebuild the entire table and update display
             self._refresh_table()
@@ -2049,6 +2193,7 @@ class MainWindow(QMainWindow):
         """Clear tracking data"""
         self.sam_manager.clear_tracking()  # This already handles the clearing both propagated and deduplicated
         self.matany_manager.propagated = False # Clear matting flag
+        self.videomama_manager.propagated = False
         self.sam_manager.deduplicated = False # Clear deduplication flag
         sammie.remove_backup_mattes() # Make sure to remove an existing mattes backup folder
         self.update_tracking_status()
@@ -2065,6 +2210,7 @@ class MainWindow(QMainWindow):
         """Clear matting data"""
         self.matany_manager.clear_matting()
         self.matany_manager.propagated = False
+        self.videomama_manager.propagated = False
         self.update_matting_status()
         self._update_current_frame_display()
 
@@ -2094,27 +2240,29 @@ class MainWindow(QMainWindow):
         """Run matting process"""
         self.settings_mgr.save_session_settings()
         count = len(self.point_manager.points)
-        if count > 0:  
-            #load models
-            print("Loading Matte model...")
+        if count > 0:
+            method = self.matting_tab.get_selected_method()
+            print(f"Loading {'VideoBuddy' if method == 'videomama' else 'MatBuddy'} model...")
             QApplication.processEvents()
             self.sam_manager.offload_model_to_cpu()
-            #self.matany_manager.load_model_to_device()
-            self.matany_manager.load_matting_model() # load matting model for first time
-            QApplication.processEvents()
-            success = self.matany_manager.run_matting(self.point_manager.points, parent_window=self)
-        
-            if success:
-                self.update_matting_status()
-                self._update_current_frame_display()
-                
+
+            if method == "videomama":
+                self.videomama_manager.load_videomama_model()
+                QApplication.processEvents()
+                self.videomama_manager.run_matting(self.point_manager.points, parent_window=self)
+                QApplication.processEvents()
+                self.settings_mgr.save_session_settings()
+                self.videomama_manager.unload_videomama_model()
             else:
-                self.update_matting_status()
-                self._update_current_frame_display()
-            # self.matany_manager.offload_model_to_cpu()
-            QApplication.processEvents()
-            self.settings_mgr.save_session_settings()
-            self.matany_manager.unload_matting_model() # unload matting model since its not needed in memory
+                self.matany_manager.load_matting_model()
+                QApplication.processEvents()
+                self.matany_manager.run_matting(self.point_manager.points, parent_window=self)
+                QApplication.processEvents()
+                self.settings_mgr.save_session_settings()
+                self.matany_manager.unload_matting_model()
+
+            self.update_matting_status()
+            self._update_current_frame_display()
             self.sam_manager.load_model_to_device()
         else:
             print("Points must be added on the Segmentation tab before matting")
@@ -2163,6 +2311,7 @@ class MainWindow(QMainWindow):
             if not self.sam_manager.propagated:
                 self.sam_manager.deduplicated = False
                 self.matany_manager.propagated = False
+                self.videomama_manager.propagated = False
                 self.removal_manager.propagated = False
             self.update_deduplicate_status()
 
@@ -2173,7 +2322,8 @@ class MainWindow(QMainWindow):
     def update_matting_status(self):
         """Update the matting status display"""
         if hasattr(self, 'matting_tab'):
-            self.matting_tab.update_matting_status(self.matany_manager.propagated)
+            is_propagated = self.matany_manager.propagated or self.videomama_manager.propagated
+            self.matting_tab.update_matting_status(is_propagated)
 
     def update_removal_status(self):
         """Update the removal status display"""
@@ -2521,6 +2671,7 @@ class MainWindow(QMainWindow):
         self.point_manager.clear_all()
         self.sam_manager.propagated = False
         self.matany_manager.propagated = False
+        self.videomama_manager.propagated = False
 
         # Create new session
         self.settings_mgr.create_new_session(file_path)
@@ -2729,7 +2880,12 @@ class MainWindow(QMainWindow):
         # Load tracking state
         self.sam_manager.propagated = settings_mgr.get_session_setting("is_propagated", False)
         self.sam_manager.deduplicated = settings_mgr.get_session_setting("is_deduplicated", False)
-        self.matany_manager.propagated = settings_mgr.get_session_setting("is_matted", False)
+        is_matted = settings_mgr.get_session_setting("is_matted", False)
+        method = settings_mgr.get_session_setting("matte_method", "matanyone")
+        if method == "videomama":
+            self.videomama_manager.propagated = is_matted
+        else:
+            self.matany_manager.propagated = is_matted
         self.removal_manager.propagated = settings_mgr.get_session_setting("is_removed", False)
         self.update_tracking_status() # also updates deduplication status
         self.update_matting_status()

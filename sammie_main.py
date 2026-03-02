@@ -356,8 +356,21 @@ class MattingTab(QWidget):
         """Initialize the matting tab layout"""
         layout = QVBoxLayout(self)
 
-        # Instructions
-        # self._create_instructions_section(layout)
+        # --- Engine selector ---
+        engine_group = QGroupBox("Matte Engine")
+        engine_layout = QHBoxLayout(engine_group)
+        self._engine_btn_group = QButtonGroup(self)
+        self.matbuddy_radio = QRadioButton("MatBuddy")
+        self.matbuddy_radio.setToolTip("MatAnyone — frame-by-frame alpha matting")
+        self.videobuddy_radio = QRadioButton("VideoBuddy")
+        self.videobuddy_radio.setToolTip("VideoMaMa — diffusion-based video matting")
+        self._engine_btn_group.addButton(self.matbuddy_radio, 0)
+        self._engine_btn_group.addButton(self.videobuddy_radio, 1)
+        self.matbuddy_radio.setChecked(True)
+        engine_layout.addWidget(self.matbuddy_radio)
+        engine_layout.addWidget(self.videobuddy_radio)
+        engine_layout.addStretch()
+        layout.addWidget(engine_group)
 
         # Run/Clear button
         matting_group = QGroupBox("Matting")
